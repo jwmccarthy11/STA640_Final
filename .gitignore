@@ -39,5 +39,5 @@ vignettes/*.pdf
 .Renviron
 
 # Knitting byproducts
-./*.aux
-./*.out
+/*.aux
+/*.out
