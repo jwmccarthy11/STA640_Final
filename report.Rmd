@@ -54,7 +54,7 @@ where $\sigma(x)$ is the sigmoid function:
 
 $$\sigma(x) = \frac{1}{1 + e^{-x}}.$$
 
-We also define $X_i \sim N(0, \Sigma)$ where $\Sigma_{ij} = 0.5^{|i-j|}.$
+We also define $X_i \sim N(0, \Sigma)$ where $\Sigma_{jk} = 0.5^{|j-k|}.$
 
 Assuming a continuous response and treatment, $N$ total observations, 
 a $p$-dimensional covariate vector, and a true value of $\theta = 0.5$, we 
