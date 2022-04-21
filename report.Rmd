@@ -234,7 +234,7 @@ $\theta=0.5$, which indicates that DML was able to avoid bias in treatment
 effect estimation. 
 
 We have therefore been able to replicate the results of Chernozhukov et al., 
-demonstrating the utility of double machine learning in produced unbiased 
+demonstrating the utility of double machine learning in producing unbiased 
 treatment effect estimates. Notably, the examples above both made use of 
 sample splitting in order to produce these estimates. The actual benefit of 
 this intermediate step will be the subject of investigation in the following 
