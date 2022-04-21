@@ -107,7 +107,7 @@ predicted value of $\theta$ through multiple fits to many random datasets.
 A naive approach to estimating $\theta$ would be to estimate $D\theta + g_0(X)$ 
 using some machine learning method. In line with the demonstration in 
 Chernozhukov et al., we will split the samples into two index sets of equal 
-size, $R$ (auxiliary) and $S$ (primary). We will then use the auxiliary set 
+size, $S_1$ (auxiliary) and $S_2$ (primary). We will then use the auxiliary set 
 generate the estimate $D\hat{\theta} + \hat{g_0}(X)$, and use the primary set to 
 estimate $\theta$ as
 
