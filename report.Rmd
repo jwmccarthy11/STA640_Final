@@ -113,8 +113,8 @@ estimate $\theta$ as
 
 $$
 \hat{\theta} 
-= \left( \frac{1}{n}\sum_{i \in S} D_i^2 \right)^{-1} 
-\frac{1}{n}\sum_{i \in S} D_i(Y_i - \hat{g_0}(X_i)).
+= \left( \frac{1}{n}\sum_{i \in S_2} D_i^2 \right)^{-1} 
+\frac{1}{n}\sum_{i \in S_2} D_i(Y_i - \hat{g_0}(X_i)).
 $$
 
 We do so for our simulated dataset below using random forest regressors.
@@ -176,8 +176,8 @@ conjunction with $\hat{g_0}(X)$ to obtain the following estimate of $\theta$:
 
 $$
 \hat{\theta} 
-= \left( \frac{1}{n}\sum_{i \in S} \hat{V}_i D_i \right)^{-1} 
-\frac{1}{n}\sum_{i \in S} \hat{V}_i(Y_i - \hat{g_0}(X_i)).
+= \left( \frac{1}{n}\sum_{i \in S_2} \hat{V}_i D_i \right)^{-1} 
+\frac{1}{n}\sum_{i \in S_2} \hat{V}_i(Y_i - \hat{g_0}(X_i)).
 $$
 
 This method is implemented in R below, again with random forest regressors.
