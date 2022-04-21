@@ -27,8 +27,9 @@ confounding parameters relative to a low dimensional treatment effect.
 ### Simulated Dataset
 
 First we will generated a toy dataset on which we may test each method. We will 
-assume the data is generated according to the following simpler model derived 
-from the general form considered in CCDDHNR:
+generate data according to the following partial-linear model, which relates 
+the treatment linearly to the response and the covariates non-linearly to both 
+the response and the treatment:
 
 $$
 \begin{aligned}
@@ -40,16 +41,16 @@ $$
 where $Y$ is the outcome, $D$ is the treatment, and $X$ is the vector of 
 covariates. $g_0(X)$ and $m_0(X)$ relate the covariates to the value of the 
 response and the treatment respectively. We define these "nuisance" functions 
-to be
+to be the following non-linear form:
 
 $$
 \begin{aligned}
-g_0(x) = x_1 + \sigma(x_3), \\
-m_0(x) = x_3 + \sigma(x_1),
+g_0(x) = \sin(x_1) + \cos(x_2) + \sigma(x_3), \\
+m_0(x) = \sin(x_4) + \cos(x_5) + \sigma(x_6),
 \end{aligned}
 $$
 
-where $\sigma(x)$ is the sigmoid function 
+where $\sigma(x)$ is the sigmoid function: 
 
 $$\sigma(x) = \frac{1}{1 + e^{-x}}.$$
 
@@ -65,11 +66,11 @@ sigmoid <- function(x) {
 }
 
 g_0 <- function(X) {
-  X[,1] + sigmoid(X[,3])
+  sin(X[,1]) + cos(X[,2]) + sigmoid(X[,3])
 }
 
 m_0 <- function(X) {
-  X[,3] + sigmoid(X[,3])
+  sin(X[,4]) + cos(X[,5]) + sigmoid(X[,6])
 }
 ```
 
@@ -148,13 +149,17 @@ distribution of said estimates to assess whether or not this approach is biased.
 ```{r, echo=F}
 load("theta_naive.RData")
 
-ggplot(aes(x=theta.est), data=NULL) +
-  geom_density(color="lightblue", fill="lightblue",alpha=0.5) +
+theta.df <- tibble(naive=theta.est) %>%
+  pivot_longer(1, names_to="model", values_to="est")
+
+ggplot(aes(x=theta.est), data=theta.df) +
+  geom_density(aes(color="grey", fill=model) ,alpha=0.5) +
   geom_vline(aes(xintercept=theta, color="black")) +
   labs(x=TeX("$\\hat{\\theta}$"), y="Density",
        title=TeX("$\\hat{\\theta}$ Distribution (Naive Random Forest)"),
        color="") +
   scale_color_manual(values=c("True Value"="black")) +
+  scale_fill_manual(values=c("lightblue"), guide="none") + 
   theme_bw()
 ```
 
@@ -205,18 +210,22 @@ save(theta.dml, file="theta_dml.RData")
 ```
 
 Having accumulated 1000 samples of $\hat{\theta}$, we may again investigate 
-their distribution.
+their distribution in comparison to the previous naive method.
 
 ```{r, echo=F}
 load("theta_dml.RData")
 
-ggplot(aes(x=theta.dml), data=NULL) +
-  geom_density(color="lightblue", fill="lightblue",alpha=0.5) +
+theta.df <- tibble(Naive=theta.est, DML=theta.dml) %>%
+  pivot_longer(1:2, names_to="Model", values_to="est")
+
+ggplot(data=theta.df) +
+  geom_density(aes(x=est, color="grey", fill=Model), alpha=0.5) +
   geom_vline(aes(xintercept=theta, color="black")) +
   labs(x=TeX("$\\hat{\\theta}$"), y="Density",
-       title=TeX("$\\hat{\\theta}$ Distribution (DML Random Forest)"),
+       title=TeX("$\\hat{\\theta}$ Distribution (DML + Naive Random Forest)"),
        color="") +
   scale_color_manual(values=c("True Value"="black")) +
+  scale_fill_manual(values=c("salmon", "lightblue")) + 
   theme_bw()
 ```
 
