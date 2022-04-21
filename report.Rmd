@@ -12,13 +12,17 @@ knitr::opts_chunk$set(echo=T)
 ```{r, include=F}
 library(tidyverse)
 library(MASS)
+library(randomForest)
+library(latex2exp)
 ```
 
-# Double ML
+# Double Machine Learning
 
 In this section we will replicate the methods put forth in the paper by 
 Chernozhukov et al., dubbed "CCDDHNR", which establishes an unbiased Bayesian 
-machine learning framework for treatment effect estimation.
+machine learning framework for treatment effect estimation. This work deals 
+with treatment effect estimation for complex data which has a high number of 
+confounding parameters relative to a low dimensional treatment effect.
 
 ### Simulated Dataset
 
@@ -49,7 +53,7 @@ where $\sigma(x)$ is the sigmoid function
 
 $$\sigma(x) = \frac{1}{1 + e^{-x}}.$$
 
-We also define $X_i \sim N(0, \Sigma)$ where $\Sigma_{ij} = 0.5^{|i-j|}$
+We also define $X_i \sim N(0, \Sigma)$ where $\Sigma_{ij} = 0.5^{|i-j|}.$
 
 Assuming a continuous response and treatment, $N$ total observations, 
 a $p$-dimensional covariate vector, and a true value of $\theta = 0.5$, we 
@@ -65,7 +69,7 @@ g_0 <- function(X) {
 }
 
 m_0 <- function(X) {
-  X[,3] + sigmoid(X[,1])
+  X[,3] + sigmoid(X[,3])
 }
 ```
 
@@ -82,7 +86,7 @@ Sigma <- 0.5^abs(i_mat - j_mat)
 
 generate_data <- function(N, p, theta, S) {
   # generate covariates
-  X <- mvrnorm(n=N, mu=rep(0, p), Sigma=Sigma)
+  X <- mvrnorm(n=N, mu=rep(0, p), Sigma=S)
   
   # generate treatment
   D <- m_0(X) + rnorm(N)
@@ -90,7 +94,7 @@ generate_data <- function(N, p, theta, S) {
   # generate response
   Y <- D*theta + g_0(X) + rnorm(N)
   
-  return(tibble(X=X, D=D, Y=Y))
+  data <- as.data.frame(cbind(Y, D, X))
 }
 ```
 
@@ -107,13 +111,122 @@ generate the estimate $D\hat{\theta} + \hat{g_0}(X)$, and use the primary set to
 estimate $\theta$ as
 
 $$
-\hat{\theta} = 
-\left( \frac{1}{n}\sum_{i \in S} D_i^2 \right)^{-1} 
+\hat{\theta} 
+= \left( \frac{1}{n}\sum_{i \in S} D_i^2 \right)^{-1} 
 \frac{1}{n}\sum_{i \in S} D_i(Y_i - \hat{g_0}(X_i)).
 $$
 
 We do so for our simulated dataset below using random forest regressors.
 
-```{r}
+```{r, eval=F, echo=T}
+n_sim <- 1000
+theta.est <- numeric(n_sim)
 
+for (i in 1:n_sim) {
+  # obtain new data
+  data <- generate_data(N, p, theta, Sigma)
+  
+  # sample splitting
+  idx <- sample.int(N, N/2, replace=F)
+  s1 <- data[idx,]
+  s2 <- data[-idx,]
+  
+  # fit random forest
+  rf <- randomForest(Y ~ ., ntree=100, data=s1)
+  
+  # obtain theta estimate
+  g.hat <- predict(rf, s2)
+  theta.est[i] <- with(s2, mean(D * (Y - g.hat)) / mean(D^2))
+}
+
+save(theta.est, file="theta_naive.RData")
 ```
+
+Having obtained a vector of 500 estimates of $\hat{\theta}$, we may plot the 
+distribution of said estimates to assess whether or not this approach is biased.
+
+```{r, echo=F}
+load("theta_naive.RData")
+
+ggplot(aes(x=theta.est), data=NULL) +
+  geom_density(color="lightblue", fill="lightblue",alpha=0.5) +
+  geom_vline(aes(xintercept=theta, color="black")) +
+  labs(x=TeX("$\\hat{\\theta}$"), y="Density",
+       title=TeX("$\\hat{\\theta}$ Distribution (Naive Random Forest)"),
+       color="") +
+  scale_color_manual(values=c("True Value"="black")) +
+  theme_bw()
+```
+
+As we can see, the estimates of $\theta$ are quite distant from the true value 
+of 0.5, indicating this naive ML method for estimating treatment effects is 
+biased. Double machine learning was introduced to address this issue.
+
+### Double ML
+
+Instead of estimating $D\theta + g_0(X)$, we may instead first estimate 
+$V = D - m_0(X)$ by regressing $D$ on $X$ and obtaining the residuals. 
+This will give the estimate $\hat{V} = D - \hat{m_0}(X)$, which we use in 
+conjunction with $\hat{g_0}(X)$ to obtain the following estimate of $\theta$:
+
+$$
+\hat{\theta} 
+= \left( \frac{1}{n}\sum_{i \in S} \hat{V}_i D_i \right)^{-1} 
+\frac{1}{n}\sum_{i \in S} \hat{V}_i(Y_i - \hat{g_0}(X_i)).
+$$
+
+This method is implemented in R below, again with random forest regressors.
+
+```{r, eval=F, echo=T}
+theta.dml <- numeric(n_sim)
+
+for (i in 1:n_sim) {
+  # obtain new data
+  data <- generate_data(N, p, theta, Sigma)
+  
+  # sample splitting
+  idx <- sample.int(N, N/2, replace=F)
+  s1 <- data[idx,]
+  s2 <- data[-idx,]
+  
+  # fit treatment
+  rf.D <- randomForest(D ~ . - Y, ntree=100, data=s1)
+  
+  # fit response
+  rf.Y <- randomForest(Y ~ . - D, ntree=100, data=s1)
+  
+  # obtain theta estimate
+  V.hat <- s2$D - predict(rf.D, s2)
+  g.hat <- predict(rf.Y, s2)
+  theta.dml[i] <- with(s2, mean(V.hat * (Y - g.hat)) / mean(V.hat * D))
+}
+
+save(theta.dml, file="theta_dml.RData")
+```
+
+Having accumulated 1000 samples of $\hat{\theta}$, we may again investigate 
+their distribution.
+
+```{r, echo=F}
+load("theta_dml.RData")
+
+ggplot(aes(x=theta.dml), data=NULL) +
+  geom_density(color="lightblue", fill="lightblue",alpha=0.5) +
+  geom_vline(aes(xintercept=theta, color="black")) +
+  labs(x=TeX("$\\hat{\\theta}$"), y="Density",
+       title=TeX("$\\hat{\\theta}$ Distribution (DML Random Forest)"),
+       color="") +
+  scale_color_manual(values=c("True Value"="black")) +
+  theme_bw()
+```
+
+This time, the distribution appears centered directly around the true value of 
+$\theta=0.5$, which indicates that DML was able to avoid bias in treatment 
+effect estimation. 
+
+We have therefore been able to replicate the results of Chernozhukov et al., 
+demonstrating the utility of double machine learning in produced unbiased 
+treatment effect estimates. Notably, the examples above both made use of 
+sample splitting in order to produce these estimates. The actual benefit of 
+this intermediate step will be the subject of investigation in the following 
+section.
