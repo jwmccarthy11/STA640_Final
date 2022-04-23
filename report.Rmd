@@ -27,7 +27,7 @@ confounding parameters relative to a low dimensional treatment effect.
 
 ### Simulated Dataset
 
-First we will generated a toy dataset on which we may test each method. We will 
+First we will generate a toy dataset on which we may test each method. We will 
 generate data according to the following partial-linear model, which relates 
 the treatment linearly to the response and the covariates non-linearly to both 
 the response and the treatment:
@@ -330,7 +330,7 @@ more rigorously, the full process with cross-fitting is the following (where
 superscripts denote the set used to obtain estimates):
 
 1. Split data into sets $S_1$ and $S_2$
-2. Obtain $\hat{g_0}^{(1)}(X)$ and $\hat{g_0}^{(2)}(x)$ via $S_1$ and $S_2$ 
+2. Obtain $\hat{g_0}^{(1)}(X)$ and $\hat{g_0}^{(2)}(X)$ via $S_1$ and $S_2$ 
 respectively
 3. Obtain residuals $\hat{V}^{(1)}=D^{(1)}-\hat{m_0}^{(1)}(X^{(1)})$ and 
 $\hat{V}^{(2)}=D^{(2)}-\hat{m_0}^{(2)}(X^{(2)})$
