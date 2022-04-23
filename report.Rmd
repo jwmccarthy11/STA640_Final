@@ -15,6 +15,7 @@ library(MASS)
 library(randomForest)
 library(latex2exp)
 library(xgboost)
+library(ggpubr)
 ```
 
 # Double Machine Learning
@@ -75,26 +76,27 @@ m_0 <- function(X) {
 }
 ```
 
-```{r}
+```{r, include=F}
 # data dimensions
-N = 250
-p = 100
-theta = 0.5
+N <- 250
+p <- 100
+theta <- 0.5
+s <- 0.5
 
-# covariance matrix
-i_mat <- matrix(rep(1:p, p), p)
-j_mat <- matrix(rep(1:p, each=p), p)
-Sigma <- 0.5^abs(i_mat - j_mat)
-
-generate_data <- function(N, p, theta, S) {
+generate_data <- function(N, p, theta, s, g, m) {
+  # covariance matrix
+  i_mat <- matrix(rep(1:p, p), p)
+  j_mat <- matrix(rep(1:p, each=p), p)
+  Sigma <- s^abs(i_mat - j_mat)
+  
   # generate covariates
-  X <- mvrnorm(n=N, mu=rep(0, p), Sigma=S)
+  X <- mvrnorm(n=N, mu=rep(0, p), Sigma=Sigma)
   
   # generate treatment
-  D <- m_0(X) + rnorm(N)
+  D <- m(X) + rnorm(N)
   
   # generate response
-  Y <- D*theta + g_0(X) + rnorm(N)
+  Y <- D*theta + g(X) + rnorm(N)
   
   data <- as.data.frame(cbind(Y, D, X))
 }
@@ -118,9 +120,7 @@ $$
 \frac{1}{n}\sum_{i \in S_2} D_i(Y_i - \hat{g_0}(X_i)).
 $$
 
-We do so for our simulated dataset below using random forest regressors.
-
-```{r, eval=F, echo=T}
+```{r, eval=F, echo=F}
 n_sim <- 1000
 theta.est <- numeric(n_sim)
 
@@ -144,7 +144,8 @@ for (i in 1:n_sim) {
 save(theta.est, file="theta_naive.RData")
 ```
 
-Having obtained a vector of 1000 estimates of $\hat{\theta}$, we may plot the 
+We do so for our simulated dataset below using random forest regressors.Having 
+obtained a vector of 1000 estimates of $\hat{\theta}$, we may plot the 
 distribution of said estimates to assess whether or not this approach is biased.
 
 ```{r, echo=F}
@@ -181,9 +182,14 @@ $$
 \frac{1}{n}\sum_{i \in S_2} \hat{V}_i(Y_i - \hat{g_0}(X_i)).
 $$
 
-This method is implemented in R below, again with random forest regressors.
+The following describes this process in its entirety:
 
-```{r, eval=F, echo=T}
+1. Split data into sets $S_1$ and $S_2$
+2. Obtain $\hat{g_0}(X)$ via a fit on $S_1$
+3. Obtain residuals $\hat{V}=D-\hat{m_0}(X)$ via a fit on $S_1$
+4. Estimate $\hat{\theta}$ using $S_2$ by the regression formula above
+
+```{r, eval=F, echo=F}
 theta.dml <- numeric(n_sim)
 
 for (i in 1:n_sim) {
@@ -208,8 +214,8 @@ for (i in 1:n_sim) {
 }
 ```
 
-Having accumulated 1000 samples of $\hat{\theta}$, we may again investigate 
-their distribution in comparison to the previous naive method.
+Having accumulated 1000 samples of $\hat{\theta}$ by the DML method, we may 
+again investigate their distribution in comparison to the previous naive method.
 
 ```{r, echo=F}
 load("theta_dml.RData")
@@ -241,29 +247,59 @@ section.
 
 # Sample Splitting
 
-Sample splitting entails dividing the data into two groups, say $S_1$ and $S_2$ 
+Sample splitting entails dividing the data into two groups, $S_1$ and $S_2$,
 for function approximation and effect estimation respectively. This was done in 
 both examples above in line with the methods introduced in Chernozhukov et al., 
 but now we will investigate how important this step is to obtaining unbiased 
 treatment effect estimates. 
 
-### Value of Sample Splitting
-
-To start, we will repeat the above DML simulation with and without sample 
+In this section we will repeat the above DML simulation with and without sample 
 splitting. When not using sample splitting, both the function approximation and 
-effect estimation will be done using the entire dataset. The following plot 
-shows the distributions of $\hat{\theta}$ for each method:
+effect estimation will be done using the entire dataset. Additionally, this will
+now be done for a range of the number of extraneous covariates and for both 
+partial and fully-linear nuisance functions.
 
-```{r, eval=F, echo=F}
-theta.split <- numeric(n_sim)
-theta.nosplit <- numeric(n_sim)
+### Simple nuisance
 
-for (i in 1:n_sim) {
-  # obtain new data
-  data <- generate_data(N, p, theta, Sigma)
-  
-  ### With sample splitting
-  
+For this simulation we will use low-dimensional nuisance functions. The linear 
+nuisance functions are defined as
+
+$$
+\begin{aligned}
+g_1(X) = \frac{1}{2}X_1 \\
+m_1(X) = \frac{1}{8}X_1
+\end{aligned}
+$$
+
+and the non-linear nuisance functions are defined to be
+
+$$
+\begin{aligned}
+g_2(X) = \frac{1}{2}\sigma(X_1) \\
+m_2(X) = \frac{1}{8}\sigma(X_1)
+\end{aligned}
+$$
+
+```{r, echo=F}
+g_1 <- function(X) {
+  1/2 * X[,1]
+}
+
+m_1 <- function(X) {
+  1/8 * X[,1]
+}
+
+g_2 <- function(X) {
+  1/2 * sigmoid(X[,1])
+}
+
+m_2 <- function(X) {
+  1/8 * sigmoid(X[,1])
+}
+```
+
+```{r, echo=F}
+rfDML.split <- function(data) {
   # sample splitting
   idx <- sample.int(N, N/2, replace=F)
   s1 <- data[idx,]
@@ -278,11 +314,10 @@ for (i in 1:n_sim) {
   # obtain theta estimate
   V.hat.ss <- s2$D - predict(rf.D.ss, s2)
   g.hat.ss <- predict(rf.Y.ss, s2)
-  theta.split[i] <- with(s2, 
-                         mean(V.hat.ss * (Y - g.hat.ss)) / mean(V.hat.ss * D))
-  
-  ### Without sample splitting
-  
+  with(s2, mean(V.hat.ss * (Y - g.hat.ss)) / mean(V.hat.ss * D))
+}
+
+rfDML.nosplit <- function(data) {
   # fit treatment
   rf.D.ns <- randomForest(D ~ . - Y, ntree=100, data=data)
   
@@ -292,32 +327,158 @@ for (i in 1:n_sim) {
   # obtain theta estimate
   V.hat.ns <- data$D - predict(rf.D.ns, data)
   g.hat.ns <- predict(rf.Y.ns, data)
-  theta.nosplit[i] <- with(data, 
-                           mean(V.hat.ns * (Y - g.hat.ns)) / mean(V.hat.ns * D))
+  with(data, mean(V.hat.ns * (Y - g.hat.ns)) / mean(V.hat.ns * D))
 }
 ```
 
-```{r, echo=F}
-load("theta_split.RData")
-load("theta_nosplit.RData")
+```{r, eval=F, echo=F}
+n_sim <- 300
 
-theta.df <- tibble(Yes=theta.split, No=theta.nosplit) %>%
-  pivot_longer(1:2, names_to="Splitting?", values_to="est")
+theta.lin.split <- tibble(
+  `p=1`=numeric(n_sim),
+  `p=10`=numeric(n_sim),
+  `p=100`=numeric(n_sim),
+)
 
-ggplot(data=theta.df) +
-  geom_density(aes(x=est, color="grey", fill=`Splitting?`), alpha=0.5) +
-  geom_vline(aes(xintercept=theta, color="black")) +
-  labs(x=TeX("$\\hat{\\theta}$"), y="Density",
-       title=TeX("$\\hat{\\theta}$ Distribution with/without Sample Splitting"),
-       color="") +
-  scale_color_manual(values=c("True Value"="black")) +
-  scale_fill_manual(values=c("salmon", "lightblue")) + 
-  theme_bw()
+theta.lin.nosplit <- tibble(
+  `p=1`=numeric(n_sim),
+  `p=10`=numeric(n_sim),
+  `p=100`=numeric(n_sim),
+)
+
+theta.non.split <- tibble(
+  `p=1`=numeric(n_sim),
+  `p=10`=numeric(n_sim),
+  `p=100`=numeric(n_sim),
+)
+
+theta.non.nosplit <- tibble(
+  `p=1`=numeric(n_sim),
+  `p=10`=numeric(n_sim),
+  `p=100`=numeric(n_sim),
+)
+
+for (i in 1:n_sim) {
+  # p=1
+  data.lin <- generate_data(N, 1, theta, s, g_1, m_1)
+  theta.lin.split[i,1] <- rfDML.split(data.lin)
+  theta.lin.nosplit[i,1] <- rfDML.nosplit(data.lin)
+  
+  data.non <- generate_data(N, 1, theta, s, g_2, m_2)
+  theta.non.split[i,1] <- rfDML.split(data.non)
+  theta.non.nosplit[i,1] <- rfDML.nosplit(data.non)
+  
+  # p=10
+  data.lin <- generate_data(N, 10, theta, s, g_1, m_1)
+  theta.lin.split[i,2] <- rfDML.split(data.lin)
+  theta.lin.nosplit[i,2] <- rfDML.nosplit(data.lin)
+  
+  data.non <- generate_data(N, 10, theta, s, g_2, m_2)
+  theta.non.split[i,2] <- rfDML.split(data.non)
+  theta.non.nosplit[i,2] <- rfDML.nosplit(data.non)
+
+  # p=100
+  data.lin <- generate_data(N, 100, theta, s, g_1, m_1)
+  theta.lin.split[i,3] <- rfDML.split(data.lin)
+  theta.lin.nosplit[i,3] <- rfDML.nosplit(data.lin)
+  
+  data.non <- generate_data(N, 100, theta, s, g_2, m_2)
+  theta.non.split[i,3] <- rfDML.split(data.non)
+  theta.non.nosplit[i,3] <- rfDML.nosplit(data.non)
+  
+  print(i)
+}
+
+save(theta.lin.split, file="theta_lin_split.RData")
+save(theta.lin.nosplit, file="theta_lin_nosplit.RData")
+save(theta.non.split, file="theta_non_split.RData")
+save(theta.non.nosplit, file="theta_non_nosplit.RData")
 ```
 
-It is clear from these distributions that bias is not avoided by double machine 
-learning when we neglect sample splitting. We therefore require that sample 
-splitting is used in the DML process.
+The results for the linear nuisance model are shown below in the form of 
+$\hat{\theta}$ distributions for each $p$.
+
+```{r, echo=F, fig.width=12, fig.height=6}
+load("theta_lin_split.RData")
+load("theta_lin_nosplit.RData")
+
+p1 <- theta.lin.split %>%
+  pivot_longer(1:3, names_to="Model", values_to="est") %>%
+  ggplot() +
+    geom_density(aes(x=est, fill=Model), alpha=0.5) +
+    geom_vline(aes(xintercept=theta, color="black")) +
+    labs(x=TeX("$\\hat{\\theta}$"), y="Density",
+         title=TeX("$\\hat{\\theta}$ Distribution with Sample Splitting"),
+         color="") +
+    scale_color_manual(values=c("True Value"="black")) +
+    scale_fill_manual(values=c("lightgreen", "salmon", "lightblue")) + 
+    theme_bw()
+
+p2 <- theta.lin.nosplit %>%
+  pivot_longer(1:3, names_to="Model", values_to="est") %>%
+  ggplot() +
+    geom_density(aes(x=est, fill=Model), alpha=0.5) +
+    geom_vline(aes(xintercept=theta, color="black")) +
+    labs(x=TeX("$\\hat{\\theta}$"), y="Density",
+         title=TeX("$\\hat{\\theta}$ Distribution without Sample Splitting"),
+         color="") +
+    scale_color_manual(values=c("True Value"="black")) +
+    scale_fill_manual(values=c("lightgreen", "salmon", "lightblue")) + 
+    theme_bw()
+
+ggarrange(p1, p2, ncol=2, common.legend=T, legend="bottom")
+```
+
+It is clear that sample-splitting has a benefit for high-dimensional covariates 
+even for an extremely simple relationship between the confounders and 
+treatment/response. The benefits of sample-splitting are still evident but much 
+less substantial for low-dimensional covariates given the bias observed for 
+$p=1$.
+
+We may now visualize the results for the simple non-linear nuisance functions.
+
+```{r, echo=F, fig.width=12, fig.height=6}
+load("theta_non_split.RData")
+load("theta_non_nosplit.RData")
+
+p1 <- theta.non.split %>%
+  pivot_longer(1:3, names_to="Model", values_to="est") %>%
+  ggplot() +
+    geom_density(aes(x=est, fill=Model), alpha=0.5) +
+    geom_vline(aes(xintercept=theta, color="black")) +
+    labs(x=TeX("$\\hat{\\theta}$"), y="Density",
+         title=TeX("$\\hat{\\theta}$ Distribution with Sample Splitting"),
+         color="") +
+    scale_color_manual(values=c("True Value"="black")) +
+    scale_fill_manual(values=c("lightgreen", "salmon", "lightblue")) + 
+    theme_bw()
+
+p2 <- theta.non.nosplit %>%
+  pivot_longer(1:3, names_to="Model", values_to="est") %>%
+  ggplot() +
+    geom_density(aes(x=est, fill=Model), alpha=0.5) +
+    geom_vline(aes(xintercept=theta, color="black")) +
+    labs(x=TeX("$\\hat{\\theta}$"), y="Density",
+         title=TeX("$\\hat{\\theta}$ Distribution without Sample Splitting"),
+         color="") +
+    scale_color_manual(values=c("True Value"="black")) +
+    scale_fill_manual(values=c("lightgreen", "salmon", "lightblue")) + 
+    theme_bw()
+
+ggarrange(p1, p2, ncol=2, common.legend=T, legend="bottom")
+```
+
+These distributions are almost identical to those for the linear nuisance, 
+with the benefits of sample-splitting being realized in particular for 
+high-dimensional covariates.
+
+### Complex Nuisance
+
+Next we will investigate the benefits of sample splitting for more complex
+nuisance functions. In this section we will only look at a partial-linear 
+model since the previous section revealed little difference between the 
+treatment effect estimates for a partial-linear and fully-linear data 
+generating mechanism.
 
 ### Cross-Fitting
 
@@ -339,9 +500,7 @@ previous section
 5. Generate final estimate 
 $\hat{\theta}=\frac{|S_1|\hat{\theta}^{(1)} + |S_2|\hat{\theta}^{(2)}}{|S_1|+|S_2|}$
 
-We implement this process in R below.
-
-```{r, eval=F, echo=T}
+```{r, eval=F, echo=F}
 theta.cross <- numeric(n_sim)
 
 for (i in 1:n_sim) {
@@ -384,20 +543,19 @@ generate.
 load("theta_cross.RData")
 
 theta.df <- tibble(
-  `Cross-fitting`=theta.cross, 
-  `Sample Splitting`=theta.split, 
-  `No Sample Splitting`=theta.nosplit
+  Yes=theta.cross, 
+  No=theta.dml
 ) %>%
-  pivot_longer(1:3, names_to="Model", values_to="est")
+  pivot_longer(1:2, names_to="Cross-Fitting?", values_to="est")
 
 ggplot(data=theta.df) +
-  geom_density(aes(x=est, color="grey", fill=Model), alpha=0.5) +
+  geom_density(aes(x=est, color="grey", fill=`Cross-Fitting?`), alpha=0.5) +
   geom_vline(aes(xintercept=theta, color="black")) +
   labs(x=TeX("$\\hat{\\theta}$"), y="Density",
        title=TeX("$\\hat{\\theta}$ Distribution - Final Comparison"),
        color="") +
   scale_color_manual(values=c("True Value"="black")) +
-  scale_fill_manual(values=c("lightgreen", "salmon", "lightblue")) + 
+  scale_fill_manual(values=c("salmon", "lightblue")) + 
   theme_bw()
 ```
 
