@@ -14,6 +14,7 @@ library(tidyverse)
 library(MASS)
 library(randomForest)
 library(latex2exp)
+library(xgboost)
 ```
 
 # Double Machine Learning
@@ -143,7 +144,7 @@ for (i in 1:n_sim) {
 save(theta.est, file="theta_naive.RData")
 ```
 
-Having obtained a vector of 500 estimates of $\hat{\theta}$, we may plot the 
+Having obtained a vector of 1000 estimates of $\hat{\theta}$, we may plot the 
 distribution of said estimates to assess whether or not this approach is biased.
 
 ```{r, echo=F}
@@ -205,8 +206,6 @@ for (i in 1:n_sim) {
   g.hat <- predict(rf.Y, s2)
   theta.dml[i] <- with(s2, mean(V.hat * (Y - g.hat)) / mean(V.hat * D))
 }
-
-save(theta.dml, file="theta_dml.RData")
 ```
 
 Having accumulated 1000 samples of $\hat{\theta}$, we may again investigate 
@@ -239,3 +238,184 @@ treatment effect estimates. Notably, the examples above both made use of
 sample splitting in order to produce these estimates. The actual benefit of 
 this intermediate step will be the subject of investigation in the following 
 section.
+
+# Sample Splitting
+
+Sample splitting entails dividing the data into two groups, say $S_1$ and $S_2$ 
+for function approximation and effect estimation respectively. This was done in 
+both examples above in line with the methods introduced in Chernozhukov et al., 
+but now we will investigate how important this step is to obtaining unbiased 
+treatment effect estimates. 
+
+### Value of Sample Splitting
+
+To start, we will repeat the above DML simulation with and without sample 
+splitting. When not using sample splitting, both the function approximation and 
+effect estimation will be done using the entire dataset. The following plot 
+shows the distributions of $\hat{\theta}$ for each method:
+
+```{r, eval=F, echo=F}
+theta.split <- numeric(n_sim)
+theta.nosplit <- numeric(n_sim)
+
+for (i in 1:n_sim) {
+  # obtain new data
+  data <- generate_data(N, p, theta, Sigma)
+  
+  ### With sample splitting
+  
+  # sample splitting
+  idx <- sample.int(N, N/2, replace=F)
+  s1 <- data[idx,]
+  s2 <- data[-idx,]
+  
+  # fit treatment
+  rf.D.ss <- randomForest(D ~ . - Y, ntree=100, data=s1)
+  
+  # fit response
+  rf.Y.ss <- randomForest(Y ~ . - D, ntree=100, data=s1)
+  
+  # obtain theta estimate
+  V.hat.ss <- s2$D - predict(rf.D.ss, s2)
+  g.hat.ss <- predict(rf.Y.ss, s2)
+  theta.split[i] <- with(s2, 
+                         mean(V.hat.ss * (Y - g.hat.ss)) / mean(V.hat.ss * D))
+  
+  ### Without sample splitting
+  
+  # fit treatment
+  rf.D.ns <- randomForest(D ~ . - Y, ntree=100, data=data)
+  
+  # fit response
+  rf.Y.ns <- randomForest(Y ~ . - D, ntree=100, data=data)
+  
+  # obtain theta estimate
+  V.hat.ns <- data$D - predict(rf.D.ns, data)
+  g.hat.ns <- predict(rf.Y.ns, data)
+  theta.nosplit[i] <- with(data, 
+                           mean(V.hat.ns * (Y - g.hat.ns)) / mean(V.hat.ns * D))
+}
+```
+
+```{r, echo=F}
+load("theta_split.RData")
+load("theta_nosplit.RData")
+
+theta.df <- tibble(Yes=theta.split, No=theta.nosplit) %>%
+  pivot_longer(1:2, names_to="Splitting?", values_to="est")
+
+ggplot(data=theta.df) +
+  geom_density(aes(x=est, color="grey", fill=`Splitting?`), alpha=0.5) +
+  geom_vline(aes(xintercept=theta, color="black")) +
+  labs(x=TeX("$\\hat{\\theta}$"), y="Density",
+       title=TeX("$\\hat{\\theta}$ Distribution with/without Sample Splitting"),
+       color="") +
+  scale_color_manual(values=c("True Value"="black")) +
+  scale_fill_manual(values=c("salmon", "lightblue")) + 
+  theme_bw()
+```
+
+It is clear from these distributions that bias is not avoided by double machine 
+learning when we neglect sample splitting. We therefore require that sample 
+splitting is used in the DML process.
+
+### Cross-Fitting
+
+Cross-fitting is one more technique that we may apply in double ML to achieve 
+unbiased treatment effect estimates. Cross-fitting entails taking the weighted 
+mean of the estimates generated via sample splitting, with the first estimate 
+training on the auxiliary set and estimating on the primary set, and the second 
+estimate training on the primary set and estimating on the auxiliary set. Put 
+more rigorously, the full process with cross-fitting is the following (where 
+superscripts denote the set used to obtain estimates):
+
+1. Split data into sets $S_1$ and $S_2$
+2. Obtain $\hat{g_0}^{(1)}(X)$ and $\hat{g_0}^{(2)}(x)$ via $S_1$ and $S_2$ 
+respectively
+3. Obtain residuals $\hat{V}^{(1)}=D^{(1)}-\hat{m_0}^{(1)}(X^{(1)})$ and 
+$\hat{V}^{(2)}=D^{(2)}-\hat{m_0}^{(2)}(X^{(2)})$
+4. Estimate $\hat{\theta}^{(1)}$ and $\hat{\theta}^{(2)}$ as shown in the 
+previous section
+5. Generate final estimate 
+$\hat{\theta}=\frac{|S_1|\hat{\theta}^{(1)} + |S_2|\hat{\theta}^{(2)}}{|S_1|+|S_2|}$
+
+We implement this process in R below.
+
+```{r, eval=F, echo=T}
+theta.cross <- numeric(n_sim)
+
+for (i in 1:n_sim) {
+  # obtain new data
+  data <- generate_data(N, p, theta, Sigma)
+  
+  # sample splitting
+  idx <- sample.int(N, N/2, replace=F)
+  s1 <- data[idx,]
+  s2 <- data[-idx,]
+  
+  # fit treatment
+  rf.D.ss.1 <- randomForest(D ~ . - Y, ntree=100, data=s1)
+  rf.D.ss.2 <- randomForest(D ~ . - Y, ntree=100, data=s2)
+  
+  # fit response
+  rf.Y.ss.1 <- randomForest(Y ~ . - D, ntree=100, data=s1)
+  rf.Y.ss.2 <- randomForest(Y ~ . - D, ntree=100, data=s2)
+  
+  # obtain theta estimate 1
+  V.hat.ss <- s2$D - predict(rf.D.ss.1, s2)
+  g.hat.ss <- predict(rf.Y.ss.1, s2)
+  theta.1 <- with(s2, mean(V.hat.ss * (Y - g.hat.ss)) / mean(V.hat.ss * D))
+  
+  # obtain theta estimate 2
+  V.hat.ss <- s1$D - predict(rf.D.ss.2, s1)
+  g.hat.ss <- predict(rf.Y.ss.2, s1)
+  theta.2 <- with(s1, mean(V.hat.ss * (Y - g.hat.ss)) / mean(V.hat.ss * D))
+  
+  # obtain final estimate
+  theta.cross[i] <- mean(c(theta.1, theta.2))
+}
+```
+
+Finally, we may compare the methods of cross-fitting, sample splitting, and 
+no sample splitting by evaluating the distributions of the estimates they 
+generate.
+
+```{r, echo=F}
+load("theta_cross.RData")
+
+theta.df <- tibble(
+  `Cross-fitting`=theta.cross, 
+  `Sample Splitting`=theta.split, 
+  `No Sample Splitting`=theta.nosplit
+) %>%
+  pivot_longer(1:3, names_to="Model", values_to="est")
+
+ggplot(data=theta.df) +
+  geom_density(aes(x=est, color="grey", fill=Model), alpha=0.5) +
+  geom_vline(aes(xintercept=theta, color="black")) +
+  labs(x=TeX("$\\hat{\\theta}$"), y="Density",
+       title=TeX("$\\hat{\\theta}$ Distribution - Final Comparison"),
+       color="") +
+  scale_color_manual(values=c("True Value"="black")) +
+  scale_fill_manual(values=c("lightgreen", "salmon", "lightblue")) + 
+  theme_bw()
+```
+
+It is clear that we see marked improvements with the addition of each 
+technique. Sample splitting eliminates bias in the treatment effect estimates 
+and cross-fitting improves the precision around the true value (as seen in 
+the lower dispersion in the distribution of $\hat{\theta}$). As such, we have 
+not only demonstrated the necessary value of sample splitting, but the 
+additional benefit of cross-fitting in obtaining treatment effect estimates.
+
+# Conclusion
+
+Double machine learning is a powerful technique for treatment effect estimation 
+with high-dimensional confounders, such as the case addressed above. While a 
+more naive approach would produce biased estimates, DML is able to side-step 
+this issue by utilizing a two-pronged machine learning process, in which one 
+model is built to predict the response and one is built to predict the treatment 
+(both based on the covariates). However, as demonstrated above, the benefits of 
+DML will not be realized unless used in conjunction with sample splitting. 
+Finally, we showed that estimates with lower uncertainty could be obtained with 
+the implementation of cross-fitting.
