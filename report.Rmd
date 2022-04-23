@@ -276,7 +276,7 @@ and the non-linear nuisance functions are defined to be
 $$
 \begin{aligned}
 g_2(X) = \frac{1}{2}\sigma(X_1) \\
-m_2(X) = \frac{1}{8}\sigma(X_1)
+m_2(X) = \frac{1}{8}\sigma(X_1).
 \end{aligned}
 $$
 
@@ -431,7 +431,7 @@ ggarrange(p1, p2, ncol=2, common.legend=T, legend="bottom")
 
 It is clear that sample-splitting has a benefit for high-dimensional covariates 
 even for an extremely simple relationship between the confounders and 
-treatment/response. The benefits of sample-splitting are still evident but much 
+treatment/response. The benefits of sample splitting are still evident but much 
 less substantial for low-dimensional covariates given the bias observed for 
 $p=1$.
 
@@ -474,11 +474,48 @@ high-dimensional covariates.
 
 ### Complex Nuisance
 
-Next we will investigate the benefits of sample splitting for more complex
-nuisance functions. In this section we will only look at a partial-linear 
-model since the previous section revealed little difference between the 
-treatment effect estimates for a partial-linear and fully-linear data 
-generating mechanism.
+For completeness we will evaluate the benefit of sample splitting for the 
+data generating process implemented for the paper replication. This will give an
+idea of the performance increase from sample splitting for a more complex 
+relationship between the covariates and the treatment/response.
+
+```{r, eval=F, echo=F}
+n_sim <- 1000
+
+theta.comp.nosplit <- numeric(n_sim)
+
+for (i in 1:n_sim) {
+  # p=100
+  data <- generate_data(N, 100, theta, s, g_0, m_0)
+  theta.comp.nosplit[i] <-rfDML.nosplit(data)
+  print(i)
+}
+
+save(theta.comp.nosplit, file="theta_comp_nosplit.RData")
+```
+
+```{r, echo=F}
+load("theta_comp_nosplit.RData")
+
+theta.df <- tibble(Yes=theta.dml, No=theta.comp.nosplit) %>%
+  pivot_longer(1:2, names_to="Splitting?", values_to="est")
+
+ggplot(data=theta.df) +
+  geom_density(aes(x=est, color="grey", fill=`Splitting?`), alpha=0.5) +
+  geom_vline(aes(xintercept=theta, color="black")) +
+  labs(x=TeX("$\\hat{\\theta}$"), y="Density",
+       title=TeX("$\\hat{\\theta}$ Distribution (DML + Naive Random Forest)"),
+       color="") +
+  scale_color_manual(values=c("True Value"="black")) +
+  scale_fill_manual(values=c("salmon", "lightblue")) + 
+  theme_bw()
+```
+
+Again, we observe that bias is reintroduced when we do not use sample splitting 
+alongside double machine learning. This is a crucial observation as it could 
+mark the difference between a sound treatment effect analysis and a faulty one.
+In this particular example we showed that sample splitting is necessary in the 
+presence of a higher-dimension non-linear data generating mechanism.
 
 ### Cross-Fitting
 
