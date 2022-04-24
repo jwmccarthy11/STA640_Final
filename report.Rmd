@@ -28,7 +28,7 @@ confounding parameters relative to a low dimensional treatment effect.
 
 ### Simulated Dataset
 
-First we will generate a toy dataset on which we may test each method. We will 
+First we will generate a toy dataset on which we will test each method. We will 
 generate data according to the following partial-linear model, which relates 
 the treatment linearly to the response and the covariates non-linearly to both 
 the response and the treatment:
@@ -58,9 +58,8 @@ $$\sigma(x) = \frac{1}{1 + e^{-x}}.$$
 
 We also define $X_i \sim N(0, \Sigma)$ where $\Sigma_{jk} = 0.5^{|j-k|}.$
 
-Assuming a continuous response and treatment, $N$ total observations, 
-a $p$-dimensional covariate vector, and a true value of $\theta = 0.5$, we 
-may generate a toy dataset as follows:
+We will generate a toy data set assuming a continuous response and treatment, 250 total observations, 
+a 100-dimensional covariate vector, and a true value of $\theta = 0.5$.
 
 ```{r, include=F}
 sigmoid <- function(x) {
@@ -102,9 +101,6 @@ generate_data <- function(N, p, theta, s, g, m) {
 }
 ```
 
-where we will use the __generate_data__ function to obtain distributions on the 
-predicted value of $\theta$ through multiple fits to many random datasets.
-
 ### Naive ML
 
 A naive approach to estimating $\theta$ would be to estimate $D\theta + g_0(X)$ 
@@ -144,8 +140,8 @@ for (i in 1:n_sim) {
 save(theta.est, file="theta_naive.RData")
 ```
 
-We do so for our simulated dataset below using random forest regressors.Having 
-obtained a vector of 1000 estimates of $\hat{\theta}$, we may plot the 
+We do so for the simulated dataset below using random forest regressors. Having 
+obtained a vector of 1000 estimates of $\hat{\theta}$, we plot the 
 distribution of said estimates to assess whether or not this approach is biased.
 
 ```{r, echo=F}
@@ -165,7 +161,7 @@ ggplot(aes(x=theta.est), data=theta.df) +
   theme_bw()
 ```
 
-As we can see, the estimates of $\theta$ are quite distant from the true value 
+The estimates of $\theta$ are quite distant from the true value 
 of 0.5, indicating this naive ML method for estimating treatment effects is 
 biased. Double machine learning was introduced to address this issue.
 
@@ -262,7 +258,7 @@ partial and fully-linear nuisance functions.
 ### Simple nuisance
 
 For this simulation we will use low-dimensional nuisance functions. The linear 
-nuisance functions are defined as
+nuisance functions are defined as:
 
 $$
 \begin{aligned}
@@ -271,7 +267,7 @@ m_1(X) = \frac{1}{8}X_1
 \end{aligned}
 $$
 
-and the non-linear nuisance functions are defined to be
+and the non-linear nuisance functions are defined as:
 
 $$
 \begin{aligned}
@@ -431,11 +427,11 @@ ggarrange(p1, p2, ncol=2, common.legend=T, legend="bottom")
 
 It is clear that sample-splitting has a benefit for high-dimensional covariates 
 even for an extremely simple relationship between the confounders and 
-treatment/response. The benefits of sample splitting are still evident but much 
+treatment/response. The benefits of sample splitting are still evident, but much 
 less substantial for low-dimensional covariates given the bias observed for 
 $p=1$.
 
-We may now visualize the results for the simple non-linear nuisance functions.
+We now visualize the results for the simple non-linear nuisance functions.
 
 ```{r, echo=F, fig.width=12, fig.height=6}
 load("theta_non_split.RData")
@@ -469,7 +465,7 @@ ggarrange(p1, p2, ncol=2, common.legend=T, legend="bottom")
 ```
 
 These distributions are almost identical to those for the linear nuisance, 
-with the benefits of sample-splitting being realized in particular for 
+with the benefits of sample-splitting being larger for 
 high-dimensional covariates.
 
 ### Complex Nuisance
@@ -519,7 +515,7 @@ presence of a higher-dimension non-linear data generating mechanism.
 
 ### Cross-Fitting
 
-Cross-fitting is one more technique that we may apply in double ML to achieve 
+Cross-fitting is one more technique that we can apply in double ML to achieve 
 unbiased treatment effect estimates. Cross-fitting entails taking the weighted 
 mean of the estimates generated via sample splitting, with the first estimate 
 training on the auxiliary set and estimating on the primary set, and the second 
@@ -572,9 +568,8 @@ for (i in 1:n_sim) {
 }
 ```
 
-Finally, we may compare the methods of cross-fitting, sample splitting, and 
-no sample splitting by evaluating the distributions of the estimates they 
-generate.
+Finally, we will examine the effect of cross-fitting by evaluating the distributions of the estimates it 
+generates.
 
 ```{r, echo=F}
 load("theta_cross.RData")
