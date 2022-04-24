@@ -18,6 +18,10 @@ library(xgboost)
 library(ggpubr)
 ```
 
+# Link to Github
+
+https://github.com/jwmccarthy11/STA640_Final
+
 # Double Machine Learning
 
 In this section we will replicate the methods put forth in the paper by 
